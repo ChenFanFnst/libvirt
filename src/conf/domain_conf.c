@@ -608,6 +608,11 @@ VIR_ENUM_IMPL(virDomainHostdevSubsysPCIBackend,
               "vfio",
               "xen")
 
+VIR_ENUM_IMPL(virDomainHostdevSubsysPCIDevice,
+              VIR_DOMAIN_HOSTDEV_PCI_DEVICE_TYPE_LAST,
+              "default",
+              "bond")
+
 VIR_ENUM_IMPL(virDomainHostdevSubsysSCSIProtocol,
               VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_LAST,
               "adapter",
@@ -1891,6 +1896,10 @@ void virDomainHostdevDefClear(virDomainHostdevDefPtr def)
             } else {
                 VIR_FREE(scsisrc->u.host.adapter);
             }
+        } else if (def->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            virDomainHostdevSubsysPCIPtr pcisrc = &def->source.subsys.u.pci;
+            if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND)
+                VIR_FREE(pcisrc->macs);
         }
         break;
     }
@@ -4977,7 +4986,9 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
     char *sgio = NULL;
     char *rawio = NULL;
     char *backendStr = NULL;
+    char *deviceStr = NULL;
     int backend;
+    int device;
     int ret = -1;
     virDomainHostdevSubsysPCIPtr pcisrc = &def->source.subsys.u.pci;
     virDomainHostdevSubsysSCSIPtr scsisrc = &def->source.subsys.u.scsi;
@@ -5075,6 +5086,68 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
             goto error;
         }
         pcisrc->backend = backend;
+
+        device =  VIR_DOMAIN_HOSTDEV_PCI_DEVICE_DEFAULT;
+        if ((deviceStr = virXPathString("string(./driver/@type)", ctxt)) &&
+            (((device = virDomainHostdevSubsysPCIDeviceTypeFromString(deviceStr)) < 0) ||
+             device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_DEFAULT)) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Unknown PCI device <driver type='%s'/> "
+                             "has been specified"), deviceStr);
+            goto error;
+        }
+        pcisrc->device = device;
+
+        if (device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
+            xmlNodePtr *macs = NULL;
+            int n = 0;
+            int i;
+            char *macStr = NULL;
+
+            if (!(virXPathNode("./bond", ctxt))) {
+                virReportError(VIR_ERR_XML_ERROR, "%s",
+                               _("missing <nond> node specified by bond type"));
+                goto error;
+            }
+
+            if ((n = virXPathNodeSet("./bond/interface", ctxt, &macs)) < 0) {
+                virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                               _("Cannot extract interface nodes"));
+                goto error;
+            }
+
+            VIR_FREE(pcisrc->macs);
+            if (VIR_ALLOC_N(pcisrc->macs, n) < 0)
+                goto error;
+
+            pcisrc->nmac = n;
+            for (i = 0; i < n; i++) {
+                xmlNodePtr cur_node = macs[i];
+
+                macStr = virXMLPropString(cur_node, "address");
+                if (!macStr) {
+                    virReportError(VIR_ERR_XML_ERROR, "%s",
+                                   _("Missing required address attribute "
+                                   "in interface element"));
+                    goto error;
+                }
+                if (virMacAddrParse((const char *)macStr, &pcisrc->macs[i]) < 0) {
+                    virReportError(VIR_ERR_XML_ERROR,
+                                   _("unable to parse mac address '%s'"),
+                                   (const char *)macStr);
+                    VIR_FREE(macStr);
+                    goto error;
+                }
+                if (virMacAddrIsMulticast(&pcisrc->macs[i])) {
+                    virReportError(VIR_ERR_XML_ERROR,
+                                   _("expected unicast mac address, found multicast '%s'"),
+                                   (const char *)macStr);
+                    VIR_FREE(macStr);
+                    goto error;
+                }
+                VIR_FREE(macStr);
+            }
+        }
 
         break;
 
@@ -18285,18 +18358,56 @@ virDomainHostdevDefFormatSubsys(virBufferPtr buf,
     virDomainHostdevSubsysSCSIHostPtr scsihostsrc = &scsisrc->u.host;
     virDomainHostdevSubsysSCSIiSCSIPtr iscsisrc = &scsisrc->u.iscsi;
 
-    if (def->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
-        pcisrc->backend != VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT) {
-        const char *backend =
-            virDomainHostdevSubsysPCIBackendTypeToString(pcisrc->backend);
+    if (def->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+        const char *backend = NULL;
+        const char *device = NULL;
+        int i;
+        char macstr[VIR_MAC_STRING_BUFLEN];
 
-        if (!backend) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("unexpected pci hostdev driver name type %d"),
-                           pcisrc->backend);
-            return -1;
+        if (pcisrc->backend != VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT) {
+            backend =
+                virDomainHostdevSubsysPCIBackendTypeToString(pcisrc->backend);
+
+            if (!backend) {
+                virReportError(VIR_ERR_INTERNAL_ERROR,
+                               _("unexpected pci hostdev driver name type %d"),
+                               pcisrc->backend);
+                return -1;
+            }
         }
-        virBufferAsprintf(buf, "<driver name='%s'/>\n", backend);
+
+        if (pcisrc->device != VIR_DOMAIN_HOSTDEV_PCI_DEVICE_DEFAULT) {
+            device =
+                virDomainHostdevSubsysPCIDeviceTypeToString(pcisrc->device);
+
+            if (!device) {
+                virReportError(VIR_ERR_INTERNAL_ERROR,
+                               _("unexpected pci hostdev device name type %d"),
+                               pcisrc->device);
+                return -1;
+            }
+        }
+
+        if (backend) {
+            virBufferAddLit(buf, "<driver");
+            virBufferAsprintf(buf, " name='%s'", backend);
+            if (device)
+                virBufferAsprintf(buf, " type='%s'", device);
+
+            virBufferAddLit(buf, "/>\n");
+        }
+
+        if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND &&
+            pcisrc->nmac > 0) {
+            virBufferAddLit(buf, "<bond>\n");
+            virBufferAdjustIndent(buf, 2);
+            for (i = 0; i < pcisrc->nmac; i++) {
+                virBufferAsprintf(buf, "<interface address='%s'/>\n",
+                                  virMacAddrFormat(&pcisrc->macs[i], macstr));
+            }
+            virBufferAdjustIndent(buf, -2);
+            virBufferAddLit(buf, "</bond>\n");
+        }
     }
 
     virBufferAddLit(buf, "<source");

@@ -416,6 +416,16 @@ typedef enum {
 
 VIR_ENUM_DECL(virDomainHostdevSubsysPCIBackend)
 
+/* the type used for PCI hostdev devices */
+typedef enum {
+    VIR_DOMAIN_HOSTDEV_PCI_DEVICE_DEFAULT, /* default */
+    VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND,    /* bond device */
+
+    VIR_DOMAIN_HOSTDEV_PCI_DEVICE_TYPE_LAST
+} virDomainHostdevSubsysPCIDeviceType;
+
+VIR_ENUM_DECL(virDomainHostdevSubsysPCIDevice)
+
 typedef enum {
     VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_NONE,
     VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_ISCSI,
@@ -442,6 +452,9 @@ typedef virDomainHostdevSubsysPCI *virDomainHostdevSubsysPCIPtr;
 struct _virDomainHostdevSubsysPCI {
     virDevicePCIAddress addr; /* host address */
     int backend; /* enum virDomainHostdevSubsysPCIBackendType */
+    int device;  /* enum virDomainHostdevSubsysPCIDeviceType */
+    size_t nmac;
+    virMacAddr* macs;
 };
 
 typedef struct _virDomainHostdevSubsysSCSIHost virDomainHostdevSubsysSCSIHost;

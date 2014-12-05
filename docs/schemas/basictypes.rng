@@ -66,6 +66,12 @@
     </choice>
   </define>
 
+  <define name="pciinterface">
+    <attribute name="address">
+      <ref name="uniMacAddr"/>
+    </attribute>
+  </define>
+
   <define name="pciaddress">
     <optional>
       <attribute name="domain">

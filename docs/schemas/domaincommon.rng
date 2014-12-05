@@ -3768,7 +3768,23 @@
               <value>xen</value>
             </choice>
           </attribute>
+          <optional>
+            <attribute name="type">
+              <choice>
+                <value>bond</value>
+              </choice>
+            </attribute>
+          </optional>
           <empty/>
+        </element>
+      </optional>
+      <optional>
+        <element name="bond">
+          <zeroOrMore>
+            <element name="interface">
+              <ref name="pciinterface"/>
+            </element>
+          </zeroOrMore>
         </element>
       </optional>
       <element name="source">

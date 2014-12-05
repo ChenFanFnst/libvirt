@@ -308,6 +308,7 @@ virDomainHostdevInsert;
 virDomainHostdevModeTypeToString;
 virDomainHostdevRemove;
 virDomainHostdevSubsysPCIBackendTypeToString;
+virDomainHostdevSubsysPCIDeviceTypeToString;
 virDomainHostdevSubsysTypeToString;
 virDomainHubTypeFromString;
 virDomainHubTypeToString;
