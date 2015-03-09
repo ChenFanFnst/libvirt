@@ -4461,6 +4461,9 @@ int qemuProcessStart(virConnectPtr conn,
                                hostdev_flags) < 0)
         goto cleanup;
 
+    if (qemuDomainInitAdd(vm, qemuPrepareHostdevInit))
+        goto cleanup;
+
     VIR_DEBUG("Preparing chr devices");
     if (virDomainChrDefForeach(vm->def,
                                true,
@@ -5196,6 +5199,7 @@ void qemuProcessStop(virQEMUDriverPtr driver,
                                  VIR_QEMU_PROCESS_KILL_NOCHECK));
 
     qemuDomainCleanupRun(driver, vm);
+    qemuDomainInitCleanup(vm);
 
     /* Stop autodestroy in case guest is restarted */
     qemuProcessAutoDestroyRemove(driver, vm);

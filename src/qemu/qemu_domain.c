@@ -2666,6 +2666,46 @@ qemuDomainCleanupRun(virQEMUDriverPtr driver,
     priv->ncleanupCallbacks_max = 0;
 }
 
+/*
+ * The vm must be locked when any of the following init functions is
+ * called.
+ */
+int
+qemuDomainInitAdd(virDomainObjPtr vm,
+                  qemuDomainInitCallback cb)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    size_t i;
+
+    VIR_DEBUG("vm=%s, cb=%p", vm->def->name, cb);
+
+    for (i = 0; i < priv->nInitCallbacks; i++) {
+        if (priv->initCallbacks[i] == cb)
+            return 0;
+    }
+
+    if (VIR_RESIZE_N(priv->initCallbacks,
+                     priv->nInitCallbacks_max,
+                     priv->nInitCallbacks, 1) < 0)
+        return -1;
+
+    priv->initCallbacks[priv->nInitCallbacks++] = cb;
+    return 0;
+}
+
+void
+qemuDomainInitCleanup(virDomainObjPtr vm)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+
+    VIR_DEBUG("vm=%s", vm->def->name);
+
+    VIR_FREE(priv->cleanupCallbacks);
+    priv->ncleanupCallbacks = 0;
+    priv->ncleanupCallbacks_max = 0;
+}
+
+
 static void
 qemuDomainGetImageIds(virQEMUDriverConfigPtr cfg,
                       virDomainObjPtr vm,
@@ -2941,7 +2981,6 @@ qemuDomObjEndAPI(virDomainObjPtr *vm)
     *vm = NULL;
 }
 
-
 int
 qemuDomainAlignMemorySizes(virDomainDefPtr def)
 {
@@ -2983,4 +3022,34 @@ void
 qemuDomainMemoryDeviceAlignSize(virDomainMemoryDefPtr mem)
 {
     mem->size = VIR_ROUND_UP(mem->size, 1024);
+}
+
+void
+qemuPrepareHostdevInit(virDomainObjPtr vm)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    virDomainDefPtr def = vm->def;
+    int i;
+
+    if (!def->nhostdevs)
+        return;
+
+    if (!qemuDomainAgentAvailable(vm, false))
+        return;
+
+    if (!virDomainObjIsActive(vm))
+        return;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        virDomainHostdevSubsysPCIPtr pcisrc = &hostdev->source.subsys.u.pci;
+
+        if (hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
+            hostdev->source.subsys.u.pci.device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
+            qemuDomainObjEnterAgent(vm);
+            qemuAgentCreateBond(priv->agent, pcisrc);
+            qemuDomainObjExitAgent(vm);
+        }
+    }
 }

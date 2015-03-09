@@ -393,6 +393,10 @@ void qemuDomainCleanupRemove(virDomainObjPtr vm,
 void qemuDomainCleanupRun(virQEMUDriverPtr driver,
                           virDomainObjPtr vm);
 
+int qemuDomainInitAdd(virDomainObjPtr vm,
+                      qemuDomainInitCallback cb);
+void qemuDomainInitCleanup(virDomainObjPtr vm);
+
 extern virDomainXMLPrivateDataCallbacks virQEMUDriverPrivateDataCallbacks;
 extern virDomainXMLNamespace virQEMUDriverDomainXMLNamespace;
 extern virDomainDefParserConfig virQEMUDriverDomainDefParserConfig;
@@ -431,5 +435,8 @@ void qemuDomObjEndAPI(virDomainObjPtr *vm);
 
 int qemuDomainAlignMemorySizes(virDomainDefPtr def);
 void qemuDomainMemoryDeviceAlignSize(virDomainMemoryDefPtr mem);
+
+void
+qemuPrepareHostdevInit(virDomainObjPtr vm);
 
 #endif /* __QEMU_DOMAIN_H__ */

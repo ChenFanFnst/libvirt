@@ -97,6 +97,13 @@ struct _qemuAgentCPUInfo {
     bool offlinable;    /* true if the CPU can be offlined */
 };
 
+typedef struct _qemuAgentInterfaceInfo qemuAgentInterfaceInfo;
+typedef qemuAgentInterfaceInfo *qemuAgentInterfaceInfoPtr;
+struct _qemuAgentInterfaceInfo {
+    char *name;
+    char *hardware_address;
+};
+
 int qemuAgentGetVCPUs(qemuAgentPtr mon, qemuAgentCPUInfoPtr *info);
 int qemuAgentSetVCPUs(qemuAgentPtr mon, qemuAgentCPUInfoPtr cpus, size_t ncpus);
 int qemuAgentUpdateCPUInfo(unsigned int nvcpus,
@@ -113,5 +120,8 @@ int qemuAgentSetTime(qemuAgentPtr mon,
 
 int qemuAgentGetInterfaces(qemuAgentPtr mon,
                            virDomainInterfacePtr **ifaces);
+
+int qemuAgentCreateBond(qemuAgentPtr mon,
+                        virDomainHostdevSubsysPCIPtr pcisrc);
 
 #endif /* __QEMU_AGENT_H__ */

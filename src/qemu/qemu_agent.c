@@ -2169,3 +2169,116 @@ qemuAgentGetInterfaces(qemuAgentPtr mon,
 
     goto cleanup;
 }
+
+static virDomainInterfacePtr
+findInterfaceByMac(virDomainInterfacePtr *info,
+                   size_t len,
+                   const char *macstr)
+{
+    size_t i;
+    bool found = false;
+
+    for (i = 0; i < len; i++) {
+        if (info[i]->hwaddr &&
+            STREQ(info[i]->hwaddr, macstr)) {
+            found = true;
+            break;
+        }
+    }
+
+    if (found) {
+        return info[i];
+    }
+
+    return NULL;
+}
+
+/*
+ * qemuAgentSetInterface:
+ */
+int
+qemuAgentCreateBond(qemuAgentPtr mon,
+                    virDomainHostdevSubsysPCIPtr pcisrc)
+{
+    int ret = -1;
+    virJSONValuePtr cmd = NULL;
+    virJSONValuePtr reply = NULL;
+    size_t i;
+    char macstr[VIR_MAC_STRING_BUFLEN];
+    virDomainInterfacePtr *interfaceInfo = NULL;
+    virDomainInterfacePtr interface;
+    virJSONValuePtr new_interface = NULL;
+    virJSONValuePtr subInterfaces = NULL;
+    virJSONValuePtr subInterface = NULL;
+    int len;
+
+    if (!(pcisrc->nmac || pcisrc->macs))
+        return ret;
+
+    len = qemuAgentGetInterfaces(mon, &interfaceInfo);
+    if (len < 0)
+        return ret;
+
+    if (!(new_interface = virJSONValueNewObject()))
+        goto cleanup;
+
+    if (virJSONValueObjectAppendString(new_interface, "type", "bond") < 0)
+        goto cleanup;
+
+    if (virJSONValueObjectAppendString(new_interface, "name", "bond0") < 0)
+        goto cleanup;
+
+    if (virJSONValueObjectAppendString(new_interface, "onboot", "onboot") < 0)
+        goto cleanup;
+
+    if (!(subInterfaces = virJSONValueNewArray()))
+        goto cleanup;
+
+    for (i = 0; i < pcisrc->nmac; i++) {
+        virMacAddrFormat(&pcisrc->macs[i], macstr);
+        interface = findInterfaceByMac(interfaceInfo, len, macstr);
+        if (!interface) {
+            goto cleanup;
+        }
+
+        if (!(subInterface = virJSONValueNewObject()))
+            goto cleanup;
+
+        if (virJSONValueObjectAppendString(subInterface, "name", interface->name) < 0)
+            goto cleanup;
+
+        if (virJSONValueArrayAppend(subInterfaces, subInterface) < 0)
+            goto cleanup;
+
+        subInterface = NULL;
+    }
+
+    if (i && virJSONValueObjectAppend(new_interface, "subInterfaces", subInterfaces) < 0)
+        goto cleanup;
+
+    cmd = qemuAgentMakeCommand("guest-network-set-interface",
+                               "a:interface", new_interface,
+                               NULL);
+
+    if (!cmd)
+        goto cleanup;
+
+    subInterfaces = NULL;
+
+    if (qemuAgentCommand(mon, cmd, &reply, true,
+                         VIR_DOMAIN_QEMU_AGENT_COMMAND_BLOCK) < 0)
+        goto cleanup;
+
+    if (virJSONValueObjectGetNumberInt(reply, "return", &ret) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("malformed return value"));
+    }
+
+ cleanup:
+    virJSONValueFree(subInterfaces);
+    virJSONValueFree(subInterface);
+    virJSONValueFree(new_interface);
+    virJSONValueFree(cmd);
+    virJSONValueFree(reply);
+    return ret;
+}
