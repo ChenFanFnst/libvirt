@@ -795,6 +795,8 @@ static virClassPtr virDomainXMLOptionClass;
 static void virDomainObjDispose(void *obj);
 static void virDomainObjListDispose(void *obj);
 static void virDomainXMLOptionClassDispose(void *obj);
+static virDomainNetIpDefPtr virDomainNetIpParseXML(xmlNodePtr node);
+
 
 static int virDomainObjOnceInit(void)
 {
@@ -1898,8 +1900,17 @@ void virDomainHostdevDefClear(virDomainHostdevDefPtr def)
             }
         } else if (def->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
             virDomainHostdevSubsysPCIPtr pcisrc = &def->source.subsys.u.pci;
-            if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND)
-                VIR_FREE(pcisrc->macs);
+            if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
+                for (i = 0; i < pcisrc->net.nmacs; i++)
+                    VIR_FREE(pcisrc->net.macs[i]);
+                VIR_FREE(pcisrc->net.macs);
+                for (i = 0; i < pcisrc->net.nips; i++)
+                    VIR_FREE(pcisrc->net.ips[i]);
+                VIR_FREE(pcisrc->net.ips);
+                for (i = 0; i < pcisrc->net.nroutes; i++)
+                    VIR_FREE(pcisrc->net.routes[i]);
+                VIR_FREE(pcisrc->net.routes);
+            }
         }
         break;
     }
@@ -5101,13 +5112,55 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
         if (device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
             xmlNodePtr *macs = NULL;
             int n = 0;
-            int i;
+            size_t i;
             char *macStr = NULL;
+            xmlNodePtr *ipnodes = NULL;
+            int nipnodes;
+            xmlNodePtr *routenodes = NULL;
+            int nroutenodes;
 
             if (!(virXPathNode("./bond", ctxt))) {
                 virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("missing <nond> node specified by bond type"));
+                               _("missing <bond> node specified by bond type"));
                 goto error;
+            }
+
+            if ((nipnodes = virXPathNodeSet("./bond/ip", ctxt, &ipnodes)) < 0)
+                goto error;
+
+            if (nipnodes) {
+                for (i = 0; i < nipnodes; i++) {
+                    virDomainNetIpDefPtr ip = virDomainNetIpParseXML(ipnodes[i]);
+
+                    if (!ip)
+                        goto error;
+
+                    if (VIR_APPEND_ELEMENT(pcisrc->net.ips,
+                                           pcisrc->net.nips, ip) < 0) {
+                        VIR_FREE(ip);
+                        goto error;
+                    }
+                }
+            }
+
+            if ((nroutenodes = virXPathNodeSet("./bond/route", ctxt, &routenodes)) < 0)
+                goto error;
+
+            if (nroutenodes) {
+                for (i = 0; i < nroutenodes; i++) {
+                    virNetworkRouteDefPtr route = NULL;
+
+                    if (!(route = virNetworkRouteDefParseXML(_("Domain hostdev device"),
+                                                             routenodes[i],
+                                                             ctxt)))
+                        goto error;
+
+                    if (VIR_APPEND_ELEMENT(pcisrc->net.routes,
+                                           pcisrc->net.nroutes, route) < 0) {
+                        virNetworkRouteDefFree(route);
+                        goto error;
+                    }
+                }
             }
 
             if ((n = virXPathNodeSet("./bond/interface", ctxt, &macs)) < 0) {
@@ -5116,11 +5169,11 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
                 goto error;
             }
 
-            VIR_FREE(pcisrc->macs);
-            if (VIR_ALLOC_N(pcisrc->macs, n) < 0)
+            VIR_FREE(pcisrc->net.macs);
+            if (VIR_ALLOC_N(pcisrc->net.macs, n) < 0)
                 goto error;
 
-            pcisrc->nmac = n;
+            pcisrc->net.nmacs = n;
             for (i = 0; i < n; i++) {
                 xmlNodePtr cur_node = macs[i];
 
@@ -5131,14 +5184,18 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
                                    "in interface element"));
                     goto error;
                 }
-                if (virMacAddrParse((const char *)macStr, &pcisrc->macs[i]) < 0) {
+
+                if (VIR_ALLOC(pcisrc->net.macs[i]) < 0)
+                    goto error;
+
+                if (virMacAddrParse((const char *)macStr, pcisrc->net.macs[i]) < 0) {
                     virReportError(VIR_ERR_XML_ERROR,
                                    _("unable to parse mac address '%s'"),
                                    (const char *)macStr);
                     VIR_FREE(macStr);
                     goto error;
                 }
-                if (virMacAddrIsMulticast(&pcisrc->macs[i])) {
+                if (virMacAddrIsMulticast(pcisrc->net.macs[i])) {
                     virReportError(VIR_ERR_XML_ERROR,
                                    _("expected unicast mac address, found multicast '%s'"),
                                    (const char *)macStr);
@@ -18397,13 +18454,17 @@ virDomainHostdevDefFormatSubsys(virBufferPtr buf,
             virBufferAddLit(buf, "/>\n");
         }
 
-        if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND &&
-            pcisrc->nmac > 0) {
+        if (pcisrc->device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
             virBufferAddLit(buf, "<bond>\n");
             virBufferAdjustIndent(buf, 2);
-            for (i = 0; i < pcisrc->nmac; i++) {
+            if (virDomainNetIpsFormat(buf, pcisrc->net.ips, pcisrc->net.nips) < 0)
+                return -1;
+            if (virDomainNetRoutesFormat(buf, pcisrc->net.routes, pcisrc->net.nroutes) < 0)
+                return -1;
+
+            for (i = 0; i < pcisrc->net.nmacs; i++) {
                 virBufferAsprintf(buf, "<interface address='%s'/>\n",
-                                  virMacAddrFormat(&pcisrc->macs[i], macstr));
+                                  virMacAddrFormat(pcisrc->net.macs[i], macstr));
             }
             virBufferAdjustIndent(buf, -2);
             virBufferAddLit(buf, "</bond>\n");

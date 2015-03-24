@@ -447,14 +447,28 @@ struct _virDomainHostdevSubsysUSB {
     unsigned product;
 };
 
+typedef struct _virDomainNetIpDef virDomainNetIpDef;
+typedef virDomainNetIpDef *virDomainNetIpDefPtr;
+struct _virDomainNetIpDef {
+    virSocketAddr address;       /* ipv4 or ipv6 address */
+    unsigned int prefix; /* number of 1 bits in the net mask */
+};
+
 typedef struct _virDomainHostdevSubsysPCI virDomainHostdevSubsysPCI;
 typedef virDomainHostdevSubsysPCI *virDomainHostdevSubsysPCIPtr;
 struct _virDomainHostdevSubsysPCI {
     virDevicePCIAddress addr; /* host address */
     int backend; /* enum virDomainHostdevSubsysPCIBackendType */
     int device;  /* enum virDomainHostdevSubsysPCIDeviceType */
-    size_t nmac;
-    virMacAddr* macs;
+
+    struct {
+        size_t nips;
+        virDomainNetIpDefPtr *ips;
+        size_t nroutes;
+        virNetworkRouteDefPtr *routes;
+        size_t nmacs;
+        virMacAddrPtr *macs;
+    } net;
 };
 
 typedef struct _virDomainHostdevSubsysSCSIHost virDomainHostdevSubsysSCSIHost;
@@ -507,12 +521,6 @@ typedef enum {
     VIR_DOMAIN_HOSTDEV_CAPS_TYPE_LAST
 } virDomainHostdevCapsType;
 
-typedef struct _virDomainNetIpDef virDomainNetIpDef;
-typedef virDomainNetIpDef *virDomainNetIpDefPtr;
-struct _virDomainNetIpDef {
-    virSocketAddr address;       /* ipv4 or ipv6 address */
-    unsigned int prefix; /* number of 1 bits in the net mask */
-};
 
 typedef struct _virDomainHostdevCaps virDomainHostdevCaps;
 typedef virDomainHostdevCaps *virDomainHostdevCapsPtr;

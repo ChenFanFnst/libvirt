@@ -2208,11 +2208,14 @@ qemuAgentCreateBond(qemuAgentPtr mon,
     virDomainInterfacePtr *interfaceInfo = NULL;
     virDomainInterfacePtr interface;
     virJSONValuePtr new_interface = NULL;
+    virJSONValuePtr ip_interface = NULL;
     virJSONValuePtr subInterfaces = NULL;
     virJSONValuePtr subInterface = NULL;
     int len;
 
-    if (!(pcisrc->nmac || pcisrc->macs))
+    if (!(pcisrc->net.nmacs &&
+          pcisrc->net.nips &&
+          pcisrc->net.nroutes))
         return ret;
 
     len = qemuAgentGetInterfaces(mon, &interfaceInfo);
@@ -2231,11 +2234,60 @@ qemuAgentCreateBond(qemuAgentPtr mon,
     if (virJSONValueObjectAppendString(new_interface, "onboot", "onboot") < 0)
         goto cleanup;
 
+    if (virJSONValueObjectAppendString(new_interface,
+                                       "options",
+                                       "mode=active-backup miimon=100 updelay=10") < 0)
+        goto cleanup;
+
+    if (!(ip_interface = virJSONValueNewObject()))
+        goto cleanup;
+
+    if (pcisrc->net.nips) {
+        /* the first valid */
+        virSocketAddrPtr address = &pcisrc->net.ips[0]->address;
+        char *ipStr = virSocketAddrFormat(address);
+        const char *familyStr = NULL;
+
+        if (virJSONValueObjectAppendString(ip_interface, "ip-address", ipStr) < 0)
+            goto cleanup;
+        VIR_FREE(ipStr);
+
+        if (VIR_SOCKET_ADDR_IS_FAMILY(address, AF_INET6))
+            familyStr = "ipv6";
+        else if (VIR_SOCKET_ADDR_IS_FAMILY(address, AF_INET))
+            familyStr = "ipv4";
+
+        if (familyStr)
+            if (virJSONValueObjectAppendString(ip_interface, "ip-address-type", familyStr) < 0)
+                goto cleanup;
+        if (pcisrc->net.ips[0]->prefix != 0)
+            if (virJSONValueObjectAppendNumberInt(ip_interface, "prefix",
+                                                  pcisrc->net.ips[0]->prefix) < 0)
+                goto cleanup;
+    }
+
+    if (pcisrc->net.nroutes) {
+        /* the first valid */
+        char *addr = NULL;
+        virSocketAddrPtr gateway = &pcisrc->net.routes[0]->gateway;
+
+        if (!(addr = virSocketAddrFormat(gateway)))
+            goto cleanup;
+        if (virJSONValueObjectAppendString(ip_interface, "gateway", addr) < 0)
+            goto cleanup;
+        VIR_FREE(addr);
+    }
+
+    if ((pcisrc->net.nroutes ||
+         pcisrc->net.nips) &&
+        virJSONValueObjectAppend(new_interface, "ip-address", ip_interface) < 0)
+        goto cleanup;
+
     if (!(subInterfaces = virJSONValueNewArray()))
         goto cleanup;
 
-    for (i = 0; i < pcisrc->nmac; i++) {
-        virMacAddrFormat(&pcisrc->macs[i], macstr);
+    for (i = 0; i < pcisrc->net.nmacs; i++) {
+        virMacAddrFormat(pcisrc->net.macs[i], macstr);
         interface = findInterfaceByMac(interfaceInfo, len, macstr);
         if (!interface) {
             goto cleanup;

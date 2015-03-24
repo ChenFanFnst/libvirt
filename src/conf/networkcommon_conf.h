@@ -35,6 +35,23 @@
 typedef struct _virNetworkRouteDef virNetworkRouteDef;
 typedef virNetworkRouteDef *virNetworkRouteDefPtr;
 
+struct _virNetworkRouteDef {
+    char *family;               /* ipv4 or ipv6 - default is ipv4 */
+    virSocketAddr address;      /* Routed Network IP address */
+
+    /* One or the other of the following two will be used for a given
+     * Network address, but never both. The parser guarantees this.
+     * The virSocketAddrGetIpPrefix() can be used to get a
+     * valid prefix.
+     */
+    virSocketAddr netmask;      /* ipv4 - either netmask or prefix specified */
+    unsigned int prefix;        /* ipv6 - only prefix allowed */
+    bool has_prefix;            /* prefix= was specified */
+    unsigned int metric;        /* value for metric (defaults to 1) */
+    bool has_metric;            /* metric= was specified */
+    virSocketAddr gateway;      /* gateway IP address for ip-route */
+};
+
 void
 virNetworkRouteDefFree(virNetworkRouteDefPtr def);
 
