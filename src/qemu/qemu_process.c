@@ -197,7 +197,29 @@ static void qemuProcessHandleAgentDestroy(qemuAgentPtr agent,
 static void qemuProcessHandleAgentInit(qemuAgentPtr agent ATTRIBUTE_UNUSED,
                                        virDomainObjPtr vm)
 {
+    struct qemuProcessEvent *processEvent = NULL;
+    virQEMUDriverPtr driver = qemu_driver;
+
+    virObjectLock(vm);
+
     VIR_DEBUG("Received init from agent on %p '%s'", vm, vm->def->name);
+
+    if (VIR_ALLOC(processEvent) < 0)
+        goto cleanup;
+
+    processEvent->eventType = QEMU_PROCESS_EVENT_GUESTINIT;
+    processEvent->vm = vm;
+
+    virObjectRef(vm);
+    if (virThreadPoolSendJob(driver->workerPool, 0, processEvent) < 0) {
+        if (!virObjectUnref(vm))
+            vm = NULL;
+        VIR_FREE(processEvent);
+    }
+
+ cleanup:
+    if (vm)
+        virObjectUnlock(vm);
 }
 
 static qemuAgentCallbacks agentCallbacks = {

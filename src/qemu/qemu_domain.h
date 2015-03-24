@@ -132,6 +132,8 @@ struct qemuDomainJobObj {
 typedef void (*qemuDomainCleanupCallback)(virQEMUDriverPtr driver,
                                           virDomainObjPtr vm);
 
+typedef void (*qemuDomainInitCallback)(virDomainObjPtr vm);
+
 typedef struct _qemuDomainObjPrivate qemuDomainObjPrivate;
 typedef qemuDomainObjPrivate *qemuDomainObjPrivatePtr;
 struct _qemuDomainObjPrivate {
@@ -180,6 +182,10 @@ struct _qemuDomainObjPrivate {
     size_t ncleanupCallbacks;
     size_t ncleanupCallbacks_max;
 
+    qemuDomainInitCallback *initCallbacks;
+    size_t nInitCallbacks;
+    size_t nInitCallbacks_max;
+
     virCgroupPtr cgroup;
 
     virCond unplugFinished; /* signals that unpluggingDevice was unplugged */
@@ -197,6 +203,7 @@ typedef enum {
     QEMU_PROCESS_EVENT_NIC_RX_FILTER_CHANGED,
     QEMU_PROCESS_EVENT_SERIAL_CHANGED,
     QEMU_PROCESS_EVENT_BLOCK_JOB,
+    QEMU_PROCESS_EVENT_GUESTINIT,
 
     QEMU_PROCESS_EVENT_LAST
 } qemuProcessEventType;

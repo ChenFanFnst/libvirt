@@ -4075,6 +4075,35 @@ processGuestPanicEvent(virQEMUDriverPtr driver,
 
 
 static void
+processGuestInitEvent(virQEMUDriverPtr driver,
+                      virDomainObjPtr vm)
+{
+    qemuDomainObjPrivatePtr priv;
+    int i;
+
+    VIR_DEBUG("init guest from domain %p %s",
+              vm, vm->def->name);
+
+    if (qemuDomainObjBeginJob(driver, vm, QEMU_JOB_MODIFY) < 0)
+        return;
+
+    if (!virDomainObjIsActive(vm)) {
+        VIR_DEBUG("Domain is not running");
+        goto endjob;
+    }
+
+    priv = vm->privateData;
+
+    for (i = 0; i < priv->nInitCallbacks; i++) {
+        if (priv->initCallbacks[i])
+            priv->initCallbacks[i](vm);
+    }
+
+ endjob:
+    qemuDomainObjEndJob(driver, vm);
+}
+
+static void
 processDeviceDeletedEvent(virQEMUDriverPtr driver,
                           virDomainObjPtr vm,
                           char *devAlias)
@@ -4621,6 +4650,9 @@ static void qemuProcessEventHandler(void *data, void *opaque)
                              processEvent->data,
                              processEvent->action,
                              processEvent->status);
+        break;
+    case QEMU_PROCESS_EVENT_GUESTINIT:
+        processGuestInitEvent(driver, vm);
         break;
     case QEMU_PROCESS_EVENT_LAST:
         break;
