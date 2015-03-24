@@ -194,8 +194,14 @@ static void qemuProcessHandleAgentDestroy(qemuAgentPtr agent,
     virObjectUnref(vm);
 }
 
+static void qemuProcessHandleAgentInit(qemuAgentPtr agent ATTRIBUTE_UNUSED,
+                                       virDomainObjPtr vm)
+{
+    VIR_DEBUG("Received init from agent on %p '%s'", vm, vm->def->name);
+}
 
 static qemuAgentCallbacks agentCallbacks = {
+    .init = qemuProcessHandleAgentInit,
     .destroy = qemuProcessHandleAgentDestroy,
     .eofNotify = qemuProcessHandleAgentEOF,
     .errorNotify = qemuProcessHandleAgentError,

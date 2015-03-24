@@ -92,6 +92,7 @@ struct _qemuAgent {
     int watch;
 
     bool connectPending;
+    bool connected;
 
     virDomainObjPtr vm;
 
@@ -306,6 +307,7 @@ qemuAgentIOProcessLine(qemuAgentPtr mon,
     virJSONValuePtr obj = NULL;
     int ret = -1;
     unsigned long long id;
+    const char *status;
 
     VIR_DEBUG("Line [%s]", line);
 
@@ -318,7 +320,11 @@ qemuAgentIOProcessLine(qemuAgentPtr mon,
         goto cleanup;
     }
 
-    if (virJSONValueObjectHasKey(obj, "QMP") == 1) {
+    if (virJSONValueObjectHasKey(obj, "QMP") == 1 ||
+        virJSONValueObjectHasKey(obj, "status") == 1) {
+        status = virJSONValueObjectGetString(obj, "status");
+        if (STREQ(status, "connected"))
+            mon->connected = true;
         ret = 0;
     } else if (virJSONValueObjectHasKey(obj, "event") == 1) {
         ret = qemuAgentIOProcessEvent(mon, obj);
@@ -700,8 +706,22 @@ qemuAgentIO(int watch, int fd, int events, void *opaque)
         VIR_DEBUG("Triggering error callback");
         (errorNotify)(mon, vm);
     } else {
-        virObjectUnlock(mon);
-        virObjectUnref(mon);
+        if (mon->connected) {
+            void (*init)(qemuAgentPtr, virDomainObjPtr)
+                = mon->cb->init;
+            virDomainObjPtr vm = mon->vm;
+
+            mon->connected = false;
+
+            virObjectUnlock(mon);
+            virObjectUnref(mon);
+
+            VIR_DEBUG("Triggering init callback");
+            (init)(mon, vm);
+        } else {
+            virObjectUnlock(mon);
+            virObjectUnref(mon);
+        }
     }
 }
 
