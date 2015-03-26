@@ -1992,6 +1992,13 @@ qemuMigrationIsAllowed(virQEMUDriverPtr driver, virDomainObjPtr vm,
     forbid = false;
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
+            hostdev->source.subsys.u.pci.device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND)
+            continue;
+
         if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
             hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB) {
             forbid = true;
