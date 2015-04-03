@@ -3019,6 +3019,9 @@ virDomainDeviceInfoIterateInternal(virDomainDefPtr def,
     device.type = VIR_DOMAIN_DEVICE_HOSTDEV;
     for (i = 0; i < def->nhostdevs; i++) {
         device.data.hostdev = def->hostdevs[i];
+        if (device.data.hostdev->state == VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE)
+            continue;
+
         if (cb(def, &device, def->hostdevs[i]->info, opaque) < 0)
             return -1;
     }

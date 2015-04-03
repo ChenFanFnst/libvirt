@@ -12252,57 +12252,6 @@ qemuDomainMigrateBegin3(virDomainPtr domain,
                               cookieout, cookieoutlen, flags);
 }
 
-static int
-qemuDomainRemovePciPassThruDevices(virConnectPtr conn,
-                                   virDomainObjPtr vm)
-{
-    virQEMUDriverPtr driver = conn->privateData;
-    virDomainDeviceDef dev;
-    virDomainDeviceDefPtr dev_copy = NULL;
-    virCapsPtr caps = NULL;
-    int ret = -1;
-    size_t i;
-
-    if (!(caps = virQEMUDriverGetCapabilities(driver, false)))
-        goto cleanup;
-
-    if (!qemuMigrationJobIsActive(vm, QEMU_ASYNC_JOB_MIGRATION_OUT))
-        goto cleanup;
-
-    /* unplug passthrough bond device */
-    for (i = 0; i < vm->def->nhostdevs; i++) {
-        virDomainHostdevDefPtr hostdev = vm->def->hostdevs[i];
-
-        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
-            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
-            hostdev->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
-            hostdev->source.subsys.u.pci.device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND) {
-
-            dev.type = VIR_DOMAIN_DEVICE_HOSTDEV;
-            dev.data.hostdev = hostdev;
-
-            dev_copy = virDomainDeviceDefCopy(&dev, vm->def, caps, driver->xmlopt);
-            if (!dev_copy)
-                goto cleanup;
-
-            if (qemuDomainDetachHostDevice(driver, vm, dev_copy) < 0) {
-                virDomainDeviceDefFree(dev_copy);
-                goto cleanup;
-            }
-
-            virDomainDeviceDefFree(dev_copy);
-            if (qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
-                goto cleanup;
-        }
-    }
-
-    ret = 0;
-
- cleanup:
-    virObjectUnref(caps);
-
-    return ret;
-}
 
 static char *
 qemuDomainMigrateBegin3Params(virDomainPtr domain,
@@ -12639,7 +12588,7 @@ qemuDomainMigratePerform3Params(virDomainPtr dom,
         return -1;
     }
 
-    if (qemuDomainRemovePciPassThruDevices(dom->conn, vm) < 0) {
+    if (qemuDomainMigratePciPassThruDevices(driver, vm, false) < 0) {
         qemuDomObjEndAPI(&vm);
         return -1;
     }

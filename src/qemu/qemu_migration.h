@@ -177,4 +177,8 @@ int qemuMigrationToFile(virQEMUDriverPtr driver, virDomainObjPtr vm,
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(5)
     ATTRIBUTE_RETURN_CHECK;
 
+int qemuDomainMigratePciPassThruDevices(virQEMUDriverPtr driver,
+                                        virDomainObjPtr vm,
+                                        bool isPlug);
+
 #endif /* __QEMU_MIGRATION_H__ */

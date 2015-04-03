@@ -206,6 +206,9 @@ virHostdevGetPCIHostDeviceList(virDomainHostdevDefPtr *hostdevs, int nhostdevs)
         virDomainHostdevSubsysPCIPtr pcisrc = &hostdev->source.subsys.u.pci;
         virPCIDevicePtr dev;
 
+        if (hostdev->state == VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE)
+            continue;
+
         if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS)
             continue;
         if (hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI)

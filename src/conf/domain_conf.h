@@ -543,6 +543,12 @@ struct _virDomainHostdevCaps {
     } u;
 };
 
+typedef enum {
+    VIR_DOMAIN_HOSTDEV_STATE_DEFAULT,
+    VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE,
+
+    VIR_DOMAIN_HOSTDEV_STATE_LAST
+} virDomainHostdevState;
 
 /* basic device for direct passthrough */
 struct _virDomainHostdevDef {
@@ -559,6 +565,7 @@ struct _virDomainHostdevDef {
     } source;
     virDomainHostdevOrigStates origstates;
     virDomainDeviceInfoPtr info; /* Guest address */
+    int state;
 };
 
 

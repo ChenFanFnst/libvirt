@@ -1993,10 +1993,7 @@ qemuMigrationIsAllowed(virQEMUDriverPtr driver, virDomainObjPtr vm,
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
 
-        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
-            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
-            hostdev->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
-            hostdev->source.subsys.u.pci.device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND)
+        if (hostdev->state == VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE)
             continue;
 
         if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
@@ -2618,6 +2615,80 @@ qemuMigrationCleanup(virDomainObjPtr vm,
 }
 
 
+static void
+qemuMigrationSetStateForHostdev(virDomainDefPtr def,
+                                int state)
+{
+    virDomainHostdevDefPtr hostdev;
+    size_t i;
+
+    if (!def)
+        return;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        hostdev = def->hostdevs[i];
+
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
+            hostdev->source.subsys.u.pci.device == VIR_DOMAIN_HOSTDEV_PCI_DEVICE_BOND)
+            hostdev->state = state;
+    }
+}
+
+
+int
+qemuDomainMigratePciPassThruDevices(virQEMUDriverPtr driver,
+                                    virDomainObjPtr vm,
+                                    bool isPlug)
+{
+    virDomainDeviceDef dev;
+    virDomainDeviceDefPtr dev_copy = NULL;
+    virDomainHostdevDefPtr hostdev;
+    virCapsPtr caps = NULL;
+    int ret = -1;
+    int i;
+
+    if (!(caps = virQEMUDriverGetCapabilities(driver, false)))
+        goto cleanup;
+
+    /* plug/unplug passthrough bond device */
+    for (i = vm->def->nhostdevs; i >= 0; i--) {
+        hostdev = vm->def->hostdevs[i];
+
+        if (hostdev->state == VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE) {
+            if (!isPlug) {
+                dev.type = VIR_DOMAIN_DEVICE_HOSTDEV;
+                dev.data.hostdev = hostdev;
+
+                dev_copy = virDomainDeviceDefCopy(&dev, vm->def, caps, driver->xmlopt);
+                if (!dev_copy)
+                    goto cleanup;
+
+                if (qemuDomainDetachHostDevice(driver, vm, dev_copy) < 0) {
+                    virDomainDeviceDefFree(dev_copy);
+                    goto cleanup;
+                }
+                virDomainDeviceDefFree(dev_copy);
+            } else {
+                qemuMigrationSetStateForHostdev(vm->def, VIR_DOMAIN_HOSTDEV_STATE_DEFAULT);
+                if (qemuDomainAttachHostDevice(NULL, driver, vm, hostdev) < 0)
+                    goto cleanup;
+            }
+            if (qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
+                goto cleanup;
+        }
+    }
+
+    ret = 0;
+
+ cleanup:
+    virObjectUnref(caps);
+
+    return ret;
+}
+
+
 /* The caller is supposed to lock the vm and start a migration job. */
 static char
 *qemuMigrationBeginPhase(virQEMUDriverPtr driver,
@@ -2650,6 +2721,8 @@ static char
      */
     if (priv->job.asyncJob == QEMU_ASYNC_JOB_MIGRATION_OUT)
         qemuMigrationJobSetPhase(driver, vm, QEMU_MIGRATION_PHASE_BEGIN3);
+
+    qemuMigrationSetStateForHostdev(vm->def, VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE);
 
     if (!qemuMigrationIsAllowed(driver, vm, NULL, true, abort_on_error))
         goto cleanup;
@@ -2871,6 +2944,8 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
 
     if (!(caps = virQEMUDriverGetCapabilities(driver, false)))
         goto cleanup;
+
+    qemuMigrationSetStateForHostdev(*def, VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE);
 
     if (!qemuMigrationIsAllowed(driver, NULL, *def, true, abort_on_error))
         goto cleanup;
@@ -5302,6 +5377,13 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
             goto endjob;
         }
 
+        /* hotplug previous mark migrate hostdev */
+        if (qemuDomainMigratePciPassThruDevices(driver, vm, true) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("passthrough for hostdev failed"));
+            goto endjob;
+        }
+
         /* Guest is successfully running, so cancel previous auto destroy */
         qemuProcessAutoDestroyRemove(driver, vm);
     } else if (!(flags & VIR_MIGRATE_OFFLINE)) {
@@ -5318,6 +5400,8 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
         VIR_WARN("Unable to encode migration cookie");
 
  endjob:
+    qemuMigrationSetStateForHostdev(vm->def, VIR_DOMAIN_HOSTDEV_STATE_DEFAULT);
+
     qemuMigrationJobFinish(driver, vm);
     if (!vm->persistent && !virDomainObjIsActive(vm))
         qemuDomainRemoveInactive(driver, vm);

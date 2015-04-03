@@ -1229,8 +1229,9 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
     unsigned int flags = 0;
 
-    if (VIR_REALLOC_N(vm->def->hostdevs, vm->def->nhostdevs + 1) < 0)
-        return -1;
+    if (hostdev->state != VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE)
+        if (VIR_REALLOC_N(vm->def->hostdevs, vm->def->nhostdevs + 1) < 0)
+            return -1;
 
     if (!cfg->relaxedACS)
         flags |= VIR_HOSTDEV_STRICT_ACS_CHECK;
@@ -1334,7 +1335,8 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     if (ret < 0)
         goto error;
 
-    vm->def->hostdevs[vm->def->nhostdevs++] = hostdev;
+    if (hostdev->state != VIR_DOMAIN_HOSTDEV_STATE_READY_FOR_MIGRATE)
+        vm->def->hostdevs[vm->def->nhostdevs++] = hostdev;
 
     VIR_FREE(devstr);
     VIR_FREE(configfd_name);
