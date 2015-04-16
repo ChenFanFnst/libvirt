@@ -2674,6 +2674,11 @@ qemuDomainMigratePciPassThruDevices(virQEMUDriverPtr driver,
                 qemuMigrationSetStateForHostdev(vm->def, VIR_DOMAIN_HOSTDEV_STATE_DEFAULT);
                 if (qemuDomainAttachHostDevice(NULL, driver, vm, hostdev) < 0)
                     goto cleanup;
+
+                /* we should enslave the hotplug pci for bond0 */
+                if () {
+
+                }
             }
             if (qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
                 goto cleanup;
