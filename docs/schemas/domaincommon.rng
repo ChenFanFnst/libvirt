@@ -2139,6 +2139,11 @@
               <ref name="virYesNo"/>
             </attribute>
           </optional>
+          <optional>
+            <attribute name="ephemeral">
+              <ref name="virYesNo"/>
+            </attribute>
+          </optional>
           <interleave>
             <element name="source">
               <optional>
@@ -3594,6 +3599,11 @@
     </optional>
     <optional>
       <attribute name="managed">
+        <ref name="virYesNo"/>
+      </attribute>
+    </optional>
+    <optional>
+      <attribute name="ephemeral">
         <ref name="virYesNo"/>
       </attribute>
     </optional>

@@ -22,7 +22,7 @@
     <controller type='usb' index='0'/>
     <controller type='ide' index='0'/>
     <controller type='pci' index='0' model='pci-root'/>
-    <hostdev mode='subsystem' type='pci' managed='yes'>
+    <hostdev mode='subsystem' type='pci' managed='yes' ephemeral='yes'>
       <driver name='vfio'/>
       <source>
         <address domain='0x55aa' bus='32' slot='15' function='3'/>

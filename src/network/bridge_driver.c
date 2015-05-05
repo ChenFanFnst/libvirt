@@ -3897,6 +3897,7 @@ networkAllocateActualDevice(virDomainDefPtr dom,
         iface->data.network.actual->data.hostdev.def.info = &iface->info;
         iface->data.network.actual->data.hostdev.def.mode = VIR_DOMAIN_HOSTDEV_MODE_SUBSYS;
         iface->data.network.actual->data.hostdev.def.managed = netdef->forward.managed ? 1 : 0;
+        iface->data.network.actual->data.hostdev.def.ephemeral = netdef->forward.ephemeral ? 1 : 0;
         iface->data.network.actual->data.hostdev.def.source.subsys.type = dev->type;
         iface->data.network.actual->data.hostdev.def.source.subsys.u.pci.addr = dev->device.pci;
 

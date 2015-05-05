@@ -188,6 +188,7 @@ typedef virNetworkForwardDef *virNetworkForwardDefPtr;
 struct _virNetworkForwardDef {
     int type;     /* One of virNetworkForwardType constants */
     bool managed;  /* managed attribute for hostdev mode */
+    bool ephemeral; /* ephemeral attribute for hostdev mode */
     int driverName; /* enum virNetworkForwardDriverNameType */
 
     /* If there are multiple forward devices (i.e. a pool of

@@ -22,7 +22,7 @@
     <controller type='usb' index='0'/>
     <controller type='ide' index='0'/>
     <controller type='pci' index='0' model='pci-root'/>
-    <interface type='hostdev' managed='yes'>
+    <interface type='hostdev' managed='yes' ephemeral='yes'>
       <mac address='00:11:22:33:44:55'/>
       <driver name='vfio'/>
       <source>

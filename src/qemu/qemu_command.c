@@ -11745,6 +11745,7 @@ qemuParseCommandLinePCI(const char *val)
 
     def->mode = VIR_DOMAIN_HOSTDEV_MODE_SUBSYS;
     def->managed = true;
+    def->ephemeral = true;
     def->source.subsys.type = VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI;
     def->source.subsys.u.pci.addr.bus = bus;
     def->source.subsys.u.pci.addr.slot = slot;

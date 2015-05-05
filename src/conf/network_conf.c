@@ -1762,6 +1762,7 @@ virNetworkForwardDefParseXML(const char *networkName,
     int nForwardIfs, nForwardAddrs, nForwardPfs, nForwardNats;
     char *forwardDev = NULL;
     char *forwardManaged = NULL;
+    char *forwardEphemeral = NULL;
     char *forwardDriverName = NULL;
     char *type = NULL;
     xmlNodePtr save = ctxt->node;
@@ -1783,6 +1784,12 @@ virNetworkForwardDefParseXML(const char *networkName,
     if (forwardManaged != NULL &&
         STRCASEEQ(forwardManaged, "yes")) {
         def->managed = true;
+    }
+
+    forwardEphemeral = virXPathString("string(./@ephemeral)", ctxt);
+    if (forwardEphemeral != NULL &&
+        STRCASEEQ(forwardEphemeral, "yes")) {
+        def->ephemeral = true;
     }
 
     forwardDriverName = virXPathString("string(./driver/@name)", ctxt);
@@ -2682,6 +2689,12 @@ virNetworkDefFormatBuf(virBufferPtr buf,
                 virBufferAddLit(buf, " managed='yes'");
             else
                 virBufferAddLit(buf, " managed='no'");
+        }
+        if (def->forward.type == VIR_NETWORK_FORWARD_HOSTDEV) {
+            if (def->forward.ephemeral)
+                virBufferAddLit(buf, " ephemeral='yes'");
+            else
+                virBufferAddLit(buf, " ephemeral='no'");
         }
         shortforward = !(def->forward.nifs || def->forward.npfs
                          || VIR_SOCKET_ADDR_VALID(&def->forward.addr.start)

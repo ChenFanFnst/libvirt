@@ -4969,6 +4969,7 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
 {
     xmlNodePtr sourcenode;
     char *managed = NULL;
+    char *ephemeral = NULL;
     char *sgio = NULL;
     char *rawio = NULL;
     char *backendStr = NULL;
@@ -4985,6 +4986,11 @@ virDomainHostdevDefParseXMLSubsys(xmlNodePtr node,
     if ((managed = virXMLPropString(node, "managed")) != NULL) {
         if (STREQ(managed, "yes"))
             def->managed = true;
+    }
+
+    if ((ephemeral = virXMLPropString(node, "ephemeral")) != NULL) {
+        if (STREQ(ephemeral, "yes"))
+            def->ephemeral = true;
     }
 
     sgio = virXMLPropString(node, "sgio");
@@ -18563,8 +18569,10 @@ virDomainActualNetDefFormat(virBufferPtr buf,
     virBufferAsprintf(buf, "<actual type='%s'", typeStr);
     if (type == VIR_DOMAIN_NET_TYPE_HOSTDEV) {
         virDomainHostdevDefPtr hostdef = virDomainNetGetActualHostdev(def);
-        if  (hostdef && hostdef->managed)
+        if (hostdef && hostdef->managed)
             virBufferAddLit(buf, " managed='yes'");
+        if (hostdef && hostdef->ephemeral)
+            virBufferAddLit(buf, " ephemeral='yes'");
     }
     if (def->trustGuestRxFilters)
         virBufferAsprintf(buf, " trustGuestRxFilters='%s'",
@@ -18735,6 +18743,8 @@ virDomainNetDefFormat(virBufferPtr buf,
     virBufferAsprintf(buf, "<interface type='%s'", typeStr);
     if (hostdef && hostdef->managed)
         virBufferAddLit(buf, " managed='yes'");
+    if (hostdef && hostdef->ephemeral)
+        virBufferAddLit(buf, " ephemeral='yes'");
     if (def->trustGuestRxFilters)
         virBufferAsprintf(buf, " trustGuestRxFilters='%s'",
                           virTristateBoolTypeToString(def->trustGuestRxFilters));
@@ -20134,6 +20144,8 @@ virDomainHostdevDefFormat(virBufferPtr buf,
     if (def->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS) {
         virBufferAsprintf(buf, " managed='%s'",
                           def->managed ? "yes" : "no");
+        virBufferAsprintf(buf, " ephemeral='%s'",
+                          def->ephemeral ? "yes" : "no");
 
         if (def->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI &&
             scsisrc->sgio)

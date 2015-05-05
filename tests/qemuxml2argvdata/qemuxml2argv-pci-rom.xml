@@ -32,13 +32,13 @@
       <model type='virtio'/>
       <rom file='/etc/fake/bootrom.bin'/>
     </interface>
-    <hostdev mode='subsystem' type='pci' managed='yes'>
+    <hostdev mode='subsystem' type='pci' managed='yes' ephemeral='no'>
       <source>
         <address domain='0x0000' bus='0x06' slot='0x12' function='0x5'/>
       </source>
       <rom bar='off'/>
     </hostdev>
-    <hostdev mode='subsystem' type='pci' managed='yes'>
+    <hostdev mode='subsystem' type='pci' managed='yes' ephemeral='no'>
       <source>
         <address domain='0x0000' bus='0x06' slot='0x12' function='0x6'/>
       </source>

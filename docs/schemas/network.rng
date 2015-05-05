@@ -115,6 +115,11 @@
                 <ref name="virYesNo"/>
               </attribute>
             </optional>
+            <optional>
+              <attribute name="ephemeral">
+                <ref name="virYesNo"/>
+              </attribute>
+            </optional>
             <interleave>
               <choice>
                 <group>
