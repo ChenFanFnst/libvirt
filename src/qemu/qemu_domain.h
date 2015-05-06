@@ -185,6 +185,9 @@ struct _qemuDomainObjPrivate {
     const char *unpluggingDevice; /* alias of the device that is being unplugged */
     char **qemuDevices; /* NULL-terminated list of devices aliases known to QEMU */
 
+    virDomainHostdevDefPtr *ephemeralDevices;
+    size_t nEphemeralDevices;
+
     bool hookRun;  /* true if there was a hook run over this domain */
 
     /* Bitmaps below hold data from the auto NUMA feature */

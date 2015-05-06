@@ -4408,6 +4408,15 @@ int qemuProcessStart(virConnectPtr conn,
 
     /* Must be run before security labelling */
     VIR_DEBUG("Preparing host devices");
+    /*
+     * Ephemeral device would be hotplugged at a later stage
+     * during migration. hence we should remove the reserved
+     * PCI address for ephemeral device.
+     */
+    if (vmop == VIR_NETDEV_VPORT_PROFILE_OP_MIGRATE_IN_START)
+        if (qemuMigrationDetachEphemeralDevices(driver, vm, false) < 0)
+            goto cleanup;
+
     if (!cfg->relaxedACS)
         hostdev_flags |= VIR_HOSTDEV_STRICT_ACS_CHECK;
     if (!migrateFrom)
@@ -4634,6 +4643,7 @@ int qemuProcessStart(virConnectPtr conn,
         VIR_DEBUG("Assigning domain PCI addresses");
         if ((qemuDomainAssignAddresses(vm->def, priv->qemuCaps, vm)) < 0)
             goto cleanup;
+
     }
 
     VIR_DEBUG("Building emulator command line");
@@ -5210,6 +5220,11 @@ void qemuProcessStop(virQEMUDriverPtr driver,
         virDomainVirtioSerialAddrSetFree(priv->vioserialaddrs);
         priv->vioserialaddrs = NULL;
     }
+
+    for (i = 0; i < priv->nEphemeralDevices; i++)
+        virDomainHostdevDefFree(priv->ephemeralDevices[i]);
+    VIR_FREE(priv->ephemeralDevices);
+    priv->nEphemeralDevices = 0;
 
     qemuDomainReAttachHostDevices(driver, vm->def);
 

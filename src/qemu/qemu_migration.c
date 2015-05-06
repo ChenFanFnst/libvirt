@@ -1993,14 +1993,16 @@ qemuMigrationIsAllowed(virQEMUDriverPtr driver, virDomainObjPtr vm,
         def = vm->def;
     }
 
-    /* Migration with USB host devices is allowed, all other devices are
-     * forbidden. */
+    /* Migration with USB and ephemeral PCI host devices is allowed,
+     * all other devices are forbidden. */
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
         if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
-            hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB) {
+            (hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB &&
+             !hostdev->ephemeral)) {
             virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                           _("domain has assigned non-USB host devices"));
+                           _("domain has assigned non-USB and "
+                             "non-ephemeral host devices"));
             return false;
         }
     }
@@ -3404,6 +3406,86 @@ qemuMigrationPrepareDef(virQEMUDriverPtr driver,
     return def;
 }
 
+int
+qemuMigrationDetachEphemeralDevices(virQEMUDriverPtr driver,
+                                    virDomainObjPtr vm,
+                                    bool live)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    virDomainHostdevDefPtr hostdev;
+    virDomainDeviceDef dev;
+    virDomainDeviceDefPtr dev_copy = NULL;
+    virCapsPtr caps = NULL;
+    int ret = -1;
+    size_t i;
+
+    VIR_DEBUG("Run detach ephemeral devices");
+
+    if (!(caps = virQEMUDriverGetCapabilities(driver, false)))
+        return ret;
+
+    for (i = 0; i < vm->def->nhostdevs;) {
+        hostdev = vm->def->hostdevs[i];
+
+        if (hostdev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS ||
+            hostdev->source.subsys.type != VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI ||
+            !hostdev->ephemeral) {
+            i++;
+            continue;
+        }
+
+        dev.type = VIR_DOMAIN_DEVICE_HOSTDEV;
+        dev.data.hostdev = hostdev;
+
+        VIR_FREE(dev_copy);
+        dev_copy = virDomainDeviceDefCopy(&dev, vm->def,
+                                          caps, driver->xmlopt);
+        if (!dev_copy)
+            goto cleanup;
+
+        if (live) {
+            if (qemuDomainDetachHostDevice(driver, vm, dev_copy) < 0)
+                goto cleanup;
+        } else {
+            virDomainHostdevRemove(vm->def, i);
+            virDomainHostdevDefFree(hostdev);
+        }
+        if (VIR_APPEND_ELEMENT(priv->ephemeralDevices,
+                               priv->nEphemeralDevices,
+                               dev_copy->data.hostdev) < 0) {
+            virDomainHostdevDefFree(dev_copy->data.hostdev);
+            goto cleanup;
+        }
+    }
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(dev_copy);
+    virObjectUnref(caps);
+
+    return ret;
+}
+
+static void
+qemuMigrationRestoreEphemeralDevices(virQEMUDriverPtr driver,
+                                     virConnectPtr conn,
+                                     virDomainObjPtr vm)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    size_t i;
+
+    for (i = 0; i < priv->nEphemeralDevices; i++)
+        if (qemuDomainAttachHostDevice(conn, driver, vm,
+                                       priv->ephemeralDevices[i]) < 0) {
+            VIR_WARN("Unable to restore ephemeral device %s on domain %s "
+                     "during migration",
+                     priv->ephemeralDevices[i]->info->alias,
+                     vm->def->name);
+            virDomainHostdevDefFree(priv->ephemeralDevices[i]);
+        }
+    VIR_FREE(priv->ephemeralDevices);
+    priv->nEphemeralDevices = 0;
+}
 
 static int
 qemuMigrationConfirmPhase(virQEMUDriverPtr driver,
@@ -3474,6 +3556,7 @@ qemuMigrationConfirmPhase(virQEMUDriverPtr driver,
 
         /* cancel any outstanding NBD jobs */
         qemuMigrationCancelDriveMirror(mig, driver, vm);
+        qemuMigrationRestoreEphemeralDevices(driver, conn, vm);
 
         if (qemuMigrationRestoreDomainState(conn, vm)) {
             event = virDomainEventLifecycleNewFromObj(vm,
@@ -4862,6 +4945,9 @@ qemuMigrationPerformJob(virQEMUDriverPtr driver,
 
     qemuMigrationStoreDomainState(vm);
 
+    if (qemuMigrationDetachEphemeralDevices(driver, vm, true) < 0)
+        goto endjob;
+
     if ((flags & (VIR_MIGRATE_TUNNELLED | VIR_MIGRATE_PEER2PEER))) {
         ret = doPeer2PeerMigrate(driver, conn, vm, xmlin,
                                  dconnuri, uri, graphicsuri, listenAddress,
@@ -4950,6 +5036,9 @@ qemuMigrationPerformPhase(virQEMUDriverPtr driver,
     qemuMigrationJobStartPhase(driver, vm, QEMU_MIGRATION_PHASE_PERFORM3);
     virCloseCallbacksUnset(driver->closeCallbacks, vm,
                            qemuMigrationCleanup);
+
+    if (qemuMigrationDetachEphemeralDevices(driver, vm, true) < 0)
+        goto endjob;
 
     ret = doNativeMigrate(driver, vm, uri, cookiein, cookieinlen,
                           cookieout, cookieoutlen,
@@ -5292,10 +5381,14 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
             }
         }
 
-        if (virDomainObjIsActive(vm) &&
-            virDomainSaveStatus(driver->xmlopt, cfg->stateDir, vm) < 0) {
-            VIR_WARN("Failed to save status on vm %s", vm->def->name);
-            goto endjob;
+        if (virDomainObjIsActive(vm)) {
+            /* Check whether exist ephemeral devices, hotplug them. */
+            qemuMigrationRestoreEphemeralDevices(driver, dconn, vm);
+
+            if (virDomainSaveStatus(driver->xmlopt, cfg->stateDir, vm) < 0) {
+                VIR_WARN("Failed to save status on vm %s", vm->def->name);
+                goto endjob;
+            }
         }
 
         /* Guest is successfully running, so cancel previous auto destroy */

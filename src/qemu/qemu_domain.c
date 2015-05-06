@@ -430,6 +430,7 @@ static void
 qemuDomainObjPrivateFree(void *data)
 {
     qemuDomainObjPrivatePtr priv = data;
+    size_t i;
 
     virObjectUnref(priv->qemuCaps);
 
@@ -447,6 +448,10 @@ qemuDomainObjPrivateFree(void *data)
     virCondDestroy(&priv->unplugFinished);
     virStringFreeList(priv->qemuDevices);
     virChrdevFree(priv->devs);
+
+    for (i = 0; i < priv->nEphemeralDevices; i++)
+        virDomainHostdevDefFree(priv->ephemeralDevices[i]);
+    VIR_FREE(priv->ephemeralDevices);
 
     /* This should never be non-NULL if we get here, but just in case... */
     if (priv->mon) {
